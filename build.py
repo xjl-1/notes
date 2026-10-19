@@ -46,13 +46,15 @@ from md2html import (  # noqa: E402
 CONFIG = {
     "vault": Path(r"E:\Obsidian Vault"),
     "out": HERE / "site",
-    "title": "熊佳乐的笔记",
-    "short": "笔记",
-    "mark": "熊",
+    "title": "lemishui",
+    "short": "lemishui",
+    "mark": "L",
+    "hero_name": "lemishui",
+    "hero_mark": "_",
     "tagline": "个人知识库 · 持续更新",
     "url": "https://xjl-1.github.io/notes",
     "desc": "个人知识库：编程、金融、通识、办公软件与英语学习。",
-    "author": "熊佳乐",
+    "author": "lemishui",
 }
 
 EXCLUDE_DIRS = {".obsidian", ".claude", ".git", ".trash", "模板", "node_modules"}
@@ -1316,7 +1318,7 @@ def main() -> int:
 
     main_home = f"""<div class="hero">
 <p class="hero__eyebrow">{esc(CONFIG['tagline'])}</p>
-<h1 class="hero__title">{esc(CONFIG['mark'])}佳乐的<em>笔记</em></h1>
+<h1 class="hero__title hero__title--mono">{esc(CONFIG['hero_name'])}<em>{esc(CONFIG['hero_mark'])}</em></h1>
 <div class="hero__stats">
 <span><b>{note_count}</b> 篇笔记</span>
 <span><b>{len(tag_notes)}</b> 个标签</span>

@@ -873,6 +873,16 @@ details.callout[open] > summary .callout__head::after { content: "收起"; }
   text-wrap: balance;
 }
 .hero__title em { font-style: normal; color: var(--accent); }
+.hero__title--mono {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+.hero__title--mono em {
+  /* the underscore sits on the baseline; nudge it so it reads as a caret */
+  position: relative;
+  top: -0.02em;
+}
 .hero__desc {
   max-width: 34rem;
   color: var(--fg-2);
