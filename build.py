@@ -283,10 +283,14 @@ def first_para(body: str) -> str:
 def collect_inline_tags(body: str) -> list[str]:
     body = re.sub(r"```.*?```", "", body, flags=re.S)
     body = re.sub(r"`[^`\n]*`", "", body)
+    # <mark style="background: #FF5582A6;"> must not register a tag called FF5582A6
+    body = re.sub(r"<[^<>\n]{0,200}>", " ", body)
     found = re.findall(r"(?:(?<=\s)|^)#([\w\u4e00-\u9fa5][\w\u4e00-\u9fa5/+-]*)", body, re.M)
     out = []
     for t in found:
-        if t.isdigit() or t.lower() in {"include", "define", "if", "endif", "pragma", "else"}:
+        if t.isdigit() or re.fullmatch(r"[0-9A-Fa-f]{6,8}", t):
+            continue
+        if t.lower() in {"include", "define", "if", "endif", "pragma", "else"}:
             continue
         if t not in out:
             out.append(t)

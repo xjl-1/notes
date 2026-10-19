@@ -159,6 +159,26 @@ class Inline:
             text,
         )
 
+        # 1c. inline HTML copied over from the vault ---------------------------
+        # docx exports leave things like <mark style="background: #ADCCFFA6;">;
+        # keep a small whitelist of tags but drop every attribute, so no stray
+        # #colour ever reaches the tag parser.
+        INLINE_TAG = re.compile(
+            r"</?(mark|span|sup|sub|u|s|del|ins|kbd|small|b|i|em|strong|br)"
+            r"(?:\s[^<>\n]{0,200})?/?>",
+            re.IGNORECASE,
+        )
+
+        def inline_tag(m):
+            name = m.group(1).lower()
+            if m.group(0).startswith("</"):
+                return keep(f"</{name}>")
+            if name == "br":
+                return keep("<br>")
+            return keep(f"<{name}>")
+
+        text = INLINE_TAG.sub(inline_tag, text)
+
         # 2. protect block/inline math ----------------------------------------
         def inline_math(m):
             body = m.group(1)
