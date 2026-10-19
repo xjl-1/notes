@@ -1,5 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://xjl-1.github.io/notes/sitemap.xml
-
-# build 20261019234906
