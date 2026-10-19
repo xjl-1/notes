@@ -20,6 +20,7 @@ import posixpath
 import re
 import shutil
 import sys
+import time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
@@ -50,7 +51,7 @@ CONFIG = {
     "mark": "熊",
     "tagline": "个人知识库 · 持续更新",
     "url": "https://xjl-1.github.io/notes",
-    "desc": "从 Obsidian 迁出的个人笔记：编程、金融、通识、办公软件与英语学习。",
+    "desc": "个人知识库：编程、金融、通识、办公软件与英语学习。",
     "author": "熊佳乐",
 }
 
@@ -61,7 +62,7 @@ EXCLUDE_FILES = {"claude.md", "agents.md", "readme.md"}
 SUPPORTED = {".md": "md", ".markdown": "md", ".txt": "txt", ".docx": "docx"}
 DOCX_CACHE = HERE / ".cache" / "docx"
 
-TOP_ORDER = ["知识笔记", "00 InBox", "Dataview"]
+TOP_ORDER = ["知识笔记", "00 InBox", "Dataview", "归档"]
 
 MONTH = {"01": "1", "02": "2", "03": "3", "04": "4", "05": "5", "06": "6",
          "07": "7", "08": "8", "09": "9", "10": "10", "11": "11", "12": "12"}
@@ -459,7 +460,11 @@ def build_nav(root: Folder, current_folders: set[str], current_out: str, out: st
         count = folder.total()
         badge = f'<span class="nav__count">{count}</span>' if count else ""
         if not sub and not notes:
-            return ""
+            # 只有 index 的空分区（比如刚整理干净的收件箱）也要留一个入口
+            return (
+                f'<a class="nav__link{" is-active" if folder.out == current_out else ""}" '
+                f'href="{rel_url(out, folder.out)}"><span class="nav__dot"></span>{esc(folder.name)}</a>'
+            )
         overview = (
             f'<a class="nav__link" href="{rel_url(out, folder.out)}">'
             f'<span class="nav__dot"></span>总览</a>'
@@ -501,36 +506,316 @@ def ancestors(key: str) -> set[str]:
 
 
 # --------------------------------------------------------------------------- #
-# dataview
+# dataview — build-time subset of the Obsidian plugin
 # --------------------------------------------------------------------------- #
+#
+# Obsidian runs Dataview queries inside the app; a static site can't. Instead we
+# evaluate them while building and bake the result into the page, so every push
+# (web editor or `publish.py`) re-runs the query and the list is always current.
+#
+# Supported: LIST / TABLE [expr as "alias", …] / FROM "folder" or #tag /
+#            WHERE <expr> / SORT <expr> [asc|desc] / LIMIT n
+# Queries only run on pages with `type: index`; elsewhere (tutorial notes) the
+# code block is shown verbatim so syntax examples stay readable.
 
-def make_dataview(folders: dict[str, Folder], out: str, notes_by_dir):
-    def handler(body: str, lang: str) -> str:
-        text = body.strip()
-        folders_wanted = re.findall(r'(?:from|FROM)\s+"([^"]+)"', text)
-        if not folders_wanted:
-            return '<div class="callout callout--info"><div class="callout__head">数据视图</div><div class="callout__body"><p>该查询没有指定目录。</p></div></div>'
-        collected: list[Note] = []
-        for f in folders_wanted:
-            f = f.strip("/")
-            node = folders.get(f)
-            if not node:
+DV_CLAUSE = re.compile(r"(?i)\s+(from|where|sort|limit)\s+")
+
+
+def dv_date(ts: float) -> str:
+    try:
+        return time.strftime("%Y-%m-%d", time.localtime(ts))
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def dv_value(note: Note, expr: str):
+    key = re.sub(r"\s+", "", expr).lower()
+    if key in ("file.name", "file.basename", "filename", "name"):
+        return posixpath.basename(note.src)
+    if key in ("file.path", "path"):
+        return note.src
+    if key in ("file.folder", "folder"):
+        return note.dir
+    if key == "file.link":
+        return note
+    if key in ("file.ctime", "file.created", "file.day", "created", "date"):
+        return note.created
+    if key in ("file.mtime", "file.modified", "updated", "modified"):
+        return dv_date(note.mtime)
+    if key in ("file.size",):
+        return f"{note.words} 字"
+    if key in ("title", "file.frontmatter.title"):
+        return note.title
+    if key in ("type", "file.frontmatter.type"):
+        return note.ntype
+    if key in ("status", "file.frontmatter.status"):
+        return note.status
+    if key in ("summary", "description"):
+        return note.summary
+    if key in ("tags", "file.tags"):
+        return note.tags
+    if key == "words":
+        return note.words
+    if key == "file.outlinks":
+        return len(note.links)
+    if key == "file.inlinks":
+        return len(note.incoming)
+    return ""
+
+
+def dv_top_split(text: str, sep: str) -> list[str]:
+    """Split on `sep` ignoring anything inside quotes or parentheses."""
+    out: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    quote = ""
+    i = 0
+    low = text.lower()
+    needle = sep.lower()
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = ""
+            i += 1
+            continue
+        if ch in "\"'":
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if depth <= 0 and low.startswith(needle, i):
+            out.append("".join(buf))
+            buf = []
+            i += len(needle)
+            continue
+        buf.append(ch)
+        i += 1
+    out.append("".join(buf))
+    return [p.strip() for p in out if p.strip()]
+
+
+def dv_operand(text: str, note: Note):
+    text = text.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1]
+    if re.match(r"(?i)^(true|false)$", text):
+        return text.lower() == "true"
+    if re.match(r"^-?\d+(\.\d+)?$", text):
+        return float(text) if "." in text else int(text)
+    return dv_value(note, text)
+
+
+def dv_compare(left, op: str, right) -> bool:
+    if isinstance(left, list):
+        left = ", ".join(str(x) for x in left)
+    if isinstance(right, list):
+        right = ", ".join(str(x) for x in right)
+    a, b = str(left), str(right)
+    if op == "=":
+        return a.strip().lower() == b.strip().lower()
+    if op == "!=":
+        return a.strip().lower() != b.strip().lower()
+    try:
+        fa, fb = float(a), float(b)
+        a, b = fa, fb  # type: ignore[assignment]
+    except (TypeError, ValueError):
+        pass
+    if op in (">", "<", ">=", "<="):
+        try:
+            return {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b}[op]  # type: ignore[operator]
+        except TypeError:
+            return False
+    return False
+
+
+def dv_eval(cond: str, note: Note) -> bool:
+    cond = cond.strip()
+    while cond.startswith("(") and cond.endswith(")") and len(dv_top_split(cond[1:-1], " or ")) == 1:
+        inner = cond[1:-1]
+        if inner.count("(") == inner.count(")"):
+            cond = inner.strip()
+        else:
+            break
+    parts = dv_top_split(cond, " or ")
+    if len(parts) > 1:
+        return any(dv_eval(p, note) for p in parts)
+    parts = dv_top_split(cond, " and ")
+    if len(parts) > 1:
+        return all(dv_eval(p, note) for p in parts)
+    if cond.startswith("!"):
+        return not dv_eval(cond[1:], note)
+    if re.match(r"(?i)^not\s+", cond):
+        return not dv_eval(re.sub(r"(?i)^not\s+", "", cond), note)
+    m = re.match(r"(?is)^(?:i?contains)\(\s*(.+?)\s*,\s*(.+?)\s*\)$", cond)
+    if m:
+        left = dv_operand(m.group(1), note)
+        right = dv_operand(m.group(2), note)
+        needle = str(right).lower()
+        if isinstance(left, list):
+            return needle in [str(x).lower() for x in left]
+        return needle in str(left).lower()
+    m = re.match(r"(?is)^(.+?)\s*(!=|>=|<=|=|>|<)\s*(.+)$", cond)
+    if m:
+        return dv_compare(dv_operand(m.group(1), note), m.group(2), dv_operand(m.group(3), note))
+    return False
+
+
+def dv_parse(text: str) -> dict | None:
+    lines = [ln.strip() for ln in text.splitlines()]
+    body = " ".join(ln for ln in lines if ln and not ln.startswith("%%"))
+    m = re.match(r"(?is)^(table|list)\b(.*)$", body.strip())
+    if not m:
+        return None
+    mode = m.group(1).lower()
+    rest = m.group(2)
+    found = list(DV_CLAUSE.finditer(rest))
+    head = rest[: found[0].start()] if found else rest
+    clauses: dict[str, str] = {}
+    for i, hit in enumerate(found):
+        end = found[i + 1].start() if i + 1 < len(found) else len(rest)
+        clauses[hit.group(1).lower()] = rest[hit.end():end].strip()
+
+    columns: list[tuple[str, str]] = []
+    if mode == "table":
+        head = re.sub(r"(?i)^\s*without\s+id\s*", "", head).strip()
+        for part in dv_top_split(head, ","):
+            alias = re.match(r"(?is)^(.*?)\s+as\s+(.+)$", part)
+            if alias:
+                expr = alias.group(1).strip()
+                label = alias.group(2).strip().strip("\"'")
+            else:
+                expr, label = part.strip(), part.strip()
+            columns.append((expr, label or expr))
+
+    sources: list[str] = []
+    from_text = clauses.get("from", "")
+    sources += re.findall(r'"([^"]+)"', from_text)
+    sources += ["#" + t for t in re.findall(r"#([\w\u4e00-\u9fa5/-]+)", from_text)]
+    if not sources and from_text:
+        sources = [s.strip().strip("\"'") for s in re.split(r"(?i)\s+or\s+", from_text) if s.strip()]
+
+    sorts: list[tuple[str, bool]] = []
+    for part in dv_top_split(clauses.get("sort", ""), ","):
+        desc = bool(re.search(r"(?i)\s+desc$", part))
+        expr = re.sub(r"(?i)\s+(asc|desc)$", "", part).strip()
+        if expr:
+            sorts.append((expr, desc))
+
+    limit = 0
+    if clauses.get("limit"):
+        try:
+            limit = int(clauses["limit"].split()[0])
+        except (ValueError, IndexError):
+            limit = 0
+
+    return {
+        "mode": mode,
+        "columns": columns,
+        "sources": sources,
+        "where": clauses.get("where", ""),
+        "sort": sorts,
+        "limit": limit,
+        "source": body.strip(),
+    }
+
+
+def dv_collect(folders: dict[str, Folder], notes: list[Note], sources: list[str], skip: Note | None) -> list[Note]:
+    picked: list[Note] = []
+    seen: set[str] = set()
+    for spec in sources:
+        spec = spec.strip()
+        if spec.startswith("#"):
+            tag = spec[1:].lower()
+            hits = [n for n in notes if tag in [t.lower() for t in n.tags]]
+        else:
+            key = spec.strip("/")
+            node = folders.get(key)
+            if node is None:
+                cands = [k for k in folders if k and (k == key or k.endswith("/" + key))]
+                node = folders[cands[0]] if cands else None
+            if node is None:
                 continue
+            hits = []
             stack = [node]
             while stack:
                 cur = stack.pop()
-                collected.extend(n for n in cur.notes if not n.is_index)
+                hits.extend(cur.notes)
                 stack.extend(cur.children.values())
-        if not collected:
-            return '<div class="callout callout--info"><div class="callout__head">数据视图</div><div class="callout__body"><p>该目录下暂时没有笔记。</p></div></div>'
-        rows = "".join(
-            f'<li><a href="{rel_url(out, n.out)}">{esc(n.title)}</a>'
-            f'<span class="dv__meta">{esc(n.created)}</span></li>'
-            for n in sorted(collected, key=lambda n: (n.created, n.title), reverse=True)
-        )
+        for n in hits:
+            if n is skip or n.is_index or n.out in seen:
+                continue
+            seen.add(n.out)
+            picked.append(n)
+    return picked
+
+
+def dv_cell(note: Note, expr: str, out: str, folders: dict[str, Folder]) -> str:
+    value = dv_value(note, expr)
+    if isinstance(value, Note):
+        return f'<a href="{rel_url(out, value.out)}">{esc(value.title)}</a>'
+    if isinstance(value, list):
+        if not value:
+            return ""
+        if all(isinstance(v, str) and v.startswith("#") for v in value):
+            return " ".join(f'<span class="chip chip--soft">{esc(v)}</span>' for v in value)
+        return "、".join(esc(str(v)) for v in value)
+    if isinstance(value, int):
+        return f"{value:,}"
+    return esc(str(value))
+
+
+def make_dataview(folders: dict[str, Folder], out: str, notes: list[Note], current: Note | None):
+    def handler(body: str, lang: str) -> str | None:
+        if lang != "dataview":
+            return None
+        if current is not None and current.ntype != "index":
+            return None  # tutorial pages: leave the query visible as code
+        query = dv_parse(body)
+        if query is None or not query["sources"]:
+            return None
+        picked = dv_collect(folders, notes, query["sources"], current)
+        if query["where"]:
+            picked = [n for n in picked if dv_eval(query["where"], n)]
+        for expr, desc in reversed(query["sort"]):
+            picked.sort(key=lambda n, e=expr: str(dv_value(n, e)), reverse=desc)
+        if query["limit"]:
+            picked = picked[: query["limit"]]
+
+        src = f'<details class="dv-source"><summary>查询语句</summary><pre><code>{esc(query["source"])}</code></pre></details>'
+        if not picked:
+            return (
+                '<div class="dv-block"><p class="dv-empty">这个查询当前没有匹配到笔记。</p>' + src + "</div>"
+            )
+
+        if query["mode"] == "list":
+            items = "".join(
+                f'<li><a href="{rel_url(out, n.out)}">{esc(n.title)}</a>'
+                f'<span class="dv__meta">{esc(n.created or dv_date(n.mtime))}</span></li>'
+                for n in picked
+            )
+            inner = f'<ul class="dv">{items}</ul>'
+        else:
+            head = '<th scope="col">笔记</th>' + "".join(f'<th scope="col">{esc(label)}</th>' for _, label in query["columns"])
+            rows = []
+            for n in picked:
+                cells = "".join(f"<td>{dv_cell(n, expr, out, folders)}</td>" for expr, _ in query["columns"])
+                rows.append(f'<tr><td><a href="{rel_url(out, n.out)}">{esc(n.title)}</a></td>{cells}</tr>')
+            inner = (
+                '<div class="tablewrap"><table class="dv-table"><thead><tr>'
+                + head
+                + "</tr></thead><tbody>"
+                + "".join(rows)
+                + "</tbody></table></div>"
+            )
         return (
-            '<div class="callout callout--info"><div class="callout__head">数据视图 · '
-            f'{len(collected)} 篇</div><div class="callout__body"><ul class="dv">{rows}</ul></div></div>'
+            f'<div class="dv-block"><p class="dv-count">数据视图 · {len(picked)} 条</p>'
+            f"{inner}{src}</div>"
         )
 
     return handler
@@ -834,8 +1119,6 @@ def main() -> int:
     tag_slug = {t: slugify(t, "tag") for t in known_tags}
     tag_out = {t: f"tags/{tag_slug[t]}.html" for t in known_tags}
 
-    dataview = make_dataview(folders, "notes/x.html", None)
-
     for n in notes:
         body = split_frontmatter(n.raw)[1]
         bodies[n.out] = body
@@ -863,7 +1146,7 @@ def main() -> int:
         result = convert(
             n.raw,
             inline,
-            dataview=make_dataview(folders, n.out, None),
+            dataview=make_dataview(folders, n.out, notes, n),
             min_heading_shift=True,
         )
         n.html = result["html"]
@@ -1030,7 +1313,6 @@ def main() -> int:
     main_home = f"""<div class="hero">
 <p class="hero__eyebrow">{esc(CONFIG['tagline'])}</p>
 <h1 class="hero__title">{esc(CONFIG['mark'])}佳乐的<em>笔记</em></h1>
-<p class="hero__desc">{esc(CONFIG['desc'])}</p>
 <div class="hero__stats">
 <span><b>{note_count}</b> 篇笔记</span>
 <span><b>{len(tag_notes)}</b> 个标签</span>
@@ -1055,7 +1337,7 @@ def main() -> int:
 <div class="list">{''.join(note_row(n, home_out) for n in by_date)}</div>
 </section>
 <footer class="foot">
-<span>由 Obsidian 笔记构建的纯静态站点</span>
+<span>纯静态站点 · GitHub Pages 托管</span>
 <span>{esc(CONFIG['author'])} · 持续整理中</span>
 </footer>"""
 

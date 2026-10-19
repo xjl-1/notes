@@ -23,4 +23,4 @@ summary: Word 转 PPT（大纲视图→发送到 PowerPoint）与 PPT 转 Word�
 ## 相关笔记
 
 - [[../PPT/基础操作|PPT基础操作]] — PPT 格式转换与效率技巧
-- [[../../../../00 InBox/docx转换待确认/Word|Word疑难杂症]] — 更多 Word 技巧 
+- [[Word|Word疑难杂症]] — 更多 Word 技巧 

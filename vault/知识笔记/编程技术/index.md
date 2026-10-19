@@ -4,7 +4,7 @@ tags: [index, 编程]
 created: 2026-06-04
 type: index
 status: active
-summary: 编程技术学习笔记索引，涵盖 C++、Git 与 AI Agent。
+summary: 编程技术学习笔记索引，涵盖 C++、Git、AI Agent、数据分析与网络爬虫。
 ---
 
 # 编程技术索引
@@ -28,4 +28,19 @@ summary: 编程技术学习笔记索引，涵盖 C++、Git 与 AI Agent。
 
 ## AI Agent
 
-> 相关笔记待从 InBox 整理后移入。参见 [[../../00 InBox/docx转换待确认/AI体系|现代 AI 体系概念笔记]]。
+| 笔记 | 说明 |
+|------|------|
+| [[AI agent/AI体系\|现代 AI 体系概念笔记]] | LLM、Token、Agent、MCP 等分层概念 |
+
+## 数据分析
+
+| 笔记 | 说明 |
+|------|------|
+| [[数据分析/数据\|数据分析学习笔记]] | Excel、PowerBI、Tableau、MySQL 与 Python 基础 |
+
+## 网络爬虫
+
+| 笔记 | 说明 |
+|------|------|
+| [[网络爬虫/Python 爬虫入门\|Python 爬虫入门]] | HTTP/HTTPS、请求过程与 URL 结构 |
+| [[网络爬虫/网络爬虫\|网络爬虫（占位）]] | 待补充 |

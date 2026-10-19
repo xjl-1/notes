@@ -365,7 +365,8 @@ class BlockParser:
                     i += 1
                 i += 1  # closing fence
                 if lang in ("dataview", "dataviewjs", "tasks") and self.dataview:
-                    out.append(self.dataview("\n".join(body), lang))
+                    rendered = self.dataview("\n".join(body), lang)
+                    out.append(rendered if rendered is not None else self._code("\n".join(body), lang))
                 else:
                     out.append(self._code("\n".join(body), lang))
                 continue
