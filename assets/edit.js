@@ -319,16 +319,26 @@
     var create = request || api(target, { method: "PUT", body: payload });
 
     create
-      .then(function () {
-        if (!moved) return null;
+      .then(function (res) {
+        var newSha = res && res.content ? res.content.sha : null;
+        if (!moved) {
+          state.current = path;
+          state.sha = newSha;
+          state.dirty = false;
+          status("已提交 · GitHub 正在重新生成站点，约 1 分钟后刷新页面即可看到", "ok");
+          return loadTree().then(renderList);
+        }
         var old = "/repos/" + OWNER + "/" + REPO + "/contents/" + encPath(state.current);
-        return api(old, { method: "DELETE", body: { message: "移动后删除旧文件 " + state.current, sha: state.sha, branch: BRANCH } });
-      })
-      .then(function () {
-        state.current = path;
-        state.dirty = false;
-        status("已提交 · GitHub 正在重新生成站点，约 1 分钟后刷新页面即可看到", "ok");
-        return loadTree().then(render);
+        return api(old, {
+          method: "DELETE",
+          body: { message: "移动后删除旧文件 " + state.current, sha: state.sha, branch: BRANCH },
+        }).then(function () {
+          state.current = path;
+          state.sha = newSha;
+          state.dirty = false;
+          status("已移动并提交 · 约 1 分钟后生效", "ok");
+          return loadTree().then(renderList);
+        });
       })
       .catch(function (err) {
         if (err.status === 409) {
@@ -388,6 +398,22 @@
 
   /* ----------------------------------------------------------------- render */
 
+  function applyFilter(value) {
+    var needle = (value || "").trim().toLowerCase();
+    Array.prototype.forEach.call(document.querySelectorAll(".ed-item"), function (node) {
+      node.hidden = !!(needle && node.title.toLowerCase().indexOf(needle) === -1);
+    });
+  }
+
+  // 只重画左侧列表，不动右侧正在编辑的内容
+  function renderList() {
+    var old = document.getElementById("ed-list");
+    if (!old) return;
+    old.replaceWith(fileList());
+    var filter = document.getElementById("ed-filter");
+    if (filter) applyFilter(filter.value);
+  }
+
   function render() {
     root.innerHTML = "";
     var shell = el("div", { class: "ed" });
@@ -426,7 +452,7 @@
       status("正在刷新…");
       loadTree().then(function () {
         status("已刷新 · " + state.files.length + " 个文件", "ok");
-        render();
+        renderList();
       }).catch(function (err) {
         status("刷新失败：" + err.message, "err");
       });
@@ -440,10 +466,7 @@
     });
     var filter = document.getElementById("ed-filter");
     filter.addEventListener("input", function () {
-      var needle = filter.value.trim().toLowerCase();
-      Array.prototype.forEach.call(document.querySelectorAll(".ed-item"), function (node) {
-        node.hidden = needle && node.title.toLowerCase().indexOf(needle) === -1;
-      });
+      applyFilter(filter.value);
     });
 
     var view = document.getElementById("ed-view");
