@@ -44,7 +44,7 @@ from md2html import (  # noqa: E402
 # --------------------------------------------------------------------------- #
 
 CONFIG = {
-    "vault": Path(r"E:\Obsidian Vault"),
+    "vault": Path(r"D:\Notes"),
     "out": HERE / "site",
     "title": "lemishui",
     "short": "lemishui",
@@ -997,7 +997,7 @@ def section_head(title: str, more: str = "") -> str:
 USAGE = """\
 usage: python build.py [options]
 
-  --vault PATH   source folder (default: ./vault, else E:\\Obsidian Vault)
+  --vault PATH   source folder (default: D:\\Notes, else ./vault)
   --out PATH     output folder (default: ./site)
   --url URL      public site url (default: %s)
   --clean        wipe the output folder first
@@ -1006,7 +1006,8 @@ usage: python build.py [options]
 
 def parse_args(argv: list[str]) -> dict:
     opts = {
-        "vault": HERE / "vault" if (HERE / "vault").is_dir() else CONFIG["vault"],
+        # edit notes where they live (D:\Notes); fall back to the ./vault mirror
+        "vault": CONFIG["vault"] if CONFIG["vault"].is_dir() else HERE / "vault",
         "out": CONFIG["out"],
         "url": CONFIG["url"],
         "clean": False,

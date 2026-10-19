@@ -13,7 +13,7 @@ automatically — no commands needed. This script is only for pushing the local
 folder in one shot, and for pulling back edits made elsewhere.
 
 Usage
-    python publish.py                 # mirror E:\\Obsidian Vault → vault/, push
+    python publish.py                 # mirror D:\\Notes → vault/, push
     python publish.py --dry           # show what would change
     python publish.py --check         # validate token / repo only
     python publish.py --pull          # download the repo's vault → local + E:\\
@@ -44,7 +44,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 VAULT = HERE / "vault"
-DEFAULT_SOURCE = Path(r"E:\Obsidian Vault")
+DEFAULT_SOURCE = Path(r"D:\Notes")
 
 API = "https://api.github.com"
 OWNER = "xjl-1"
@@ -455,7 +455,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="sync notes + sources to GitHub Pages")
     ap.add_argument("--token", default=None)
     ap.add_argument("--from", dest="source", default=str(DEFAULT_SOURCE),
-                    help="folder to mirror into ./vault (default: E:\\Obsidian Vault)")
+                    help="folder to mirror into ./vault (default: D:\\Notes)")
     ap.add_argument("--check", action="store_true", help="validate token and repo only")
     ap.add_argument("--dry", action="store_true", help="report changes without pushing")
     ap.add_argument("--pull", action="store_true", help="download the repo's vault/ to local")

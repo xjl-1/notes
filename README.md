@@ -31,20 +31,20 @@ Classic token（只保存在本机浏览器），之后就能：
 
 ## 在本机改笔记
 
-`vault/` 是 `E:\Obsidian Vault` 的镜像，两种用法：
+`vault/` 是 `D:\Notes` 的镜像，两种用法：
 
 ```powershell
-# 把电脑上 vault 的改动推上去（会先镜像 E:\Obsidian Vault → ./vault）
+# 把电脑上 vault 的改动推上去（会先镜像 D:\Notes → ./vault）
 python publish.py
 
-# 把手机/网页上改的内容拉回电脑（同时写回 E:\Obsidian Vault）
+# 把手机/网页上改的内容拉回电脑（同时写回 D:\Notes）
 python publish.py --pull
 
 # 只看会改什么，不推送
 python publish.py --dry
 ```
 
-`E:\Obsidian Vault` 里改完，也可以只跑 `python publish.py`，一条命令搞定。
+`D:\Notes` 里改完，也可以只跑 `python publish.py`，一条命令搞定。
 
 ## 本地预览
 
