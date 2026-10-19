@@ -76,6 +76,17 @@
     return btoa(bin);
   }
 
+  // 任意二进制（手机上选的 .docx）→ base64，供 Contents API 上传
+  function b64bytes(buffer) {
+    var bytes = new Uint8Array(buffer);
+    var bin = "";
+    var CH = 0x8000;
+    for (var i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return btoa(bin);
+  }
+
   function b64dec(text) {
     var bin = atob(String(text).replace(/\s+/g, ""));
     var bytes = new Uint8Array(bin.length);
@@ -231,8 +242,11 @@
     });
     bar.appendChild(filter);
     bar.appendChild(el("button", { class: "btn", type: "button", id: "ed-new" }, "新建"));
+    bar.appendChild(el("button", { class: "btn", type: "button", id: "ed-upload" }, "上传"));
     bar.appendChild(el("button", { class: "btn", type: "button", id: "ed-refresh" }, "刷新"));
     bar.appendChild(el("button", { class: "btn btn--ghost", type: "button", id: "ed-forget" }, "退出"));
+    var picker = el("input", { type: "file", id: "ed-file", accept: ".md,.markdown,.txt,.docx", hidden: "hidden" });
+    bar.appendChild(picker);
     return bar;
   }
 
@@ -396,6 +410,48 @@
     status("新笔记还没保存，写完点「保存」", "info");
   }
 
+  /* ----------------------------------------------------------------- upload */
+
+  // 手机上把 .md / .txt / .docx 直接传进仓库（.docx 由构建脚本用 pandoc 转 md）
+  function uploadFile(file) {
+    if (!file) return;
+    if (!SUFFIX.test(file.name)) {
+      status("只支持 .md / .txt / .docx；.doc 请先用 Word 另存为 .docx。", "err");
+      return;
+    }
+    var folder = prompt("放到哪个目录？（留空 = 收件箱 00 InBox）", "00 InBox");
+    if (folder === null) return;
+    folder = String(folder).trim().replace(/^vault\//i, "").replace(/^\/+|\/+$/g, "");
+    var path = PREFIX + (folder ? folder + "/" : "") + file.name;
+    if (state.files.some(function (f) { return f.path === path; })) {
+      if (!confirm(path.slice(PREFIX.length) + " 已存在，覆盖它？")) return;
+    }
+    setBusy(true);
+    status("正在上传 " + file.name + "（" + Math.max(1, Math.round(file.size / 1024)) + " KB）…");
+    var reader = new FileReader();
+    reader.onerror = function () {
+      setBusy(false);
+      status("读取文件失败。", "err");
+    };
+    reader.onload = function () {
+      api("/repos/" + OWNER + "/" + REPO + "/contents/" + encPath(path), {
+        method: "PUT",
+        body: { message: "上传 " + file.name, content: b64bytes(reader.result), branch: BRANCH },
+      })
+        .then(function () {
+          status("已上传到 " + path.slice(PREFIX.length) + " · 约 1 分钟后自动生成页面", "ok");
+          return loadTree().then(renderList);
+        })
+        .catch(function (err) {
+          status("上传失败：" + err.message, "err");
+        })
+        .then(function () {
+          setBusy(false);
+        });
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   /* ----------------------------------------------------------------- render */
 
   function applyFilter(value) {
@@ -458,6 +514,14 @@
       });
     });
     document.getElementById("ed-new").addEventListener("click", createFile);
+    var picker = document.getElementById("ed-file");
+    document.getElementById("ed-upload").addEventListener("click", function () {
+      picker.value = "";
+      picker.click();
+    });
+    picker.addEventListener("change", function () {
+      uploadFile(picker.files && picker.files[0]);
+    });
     document.getElementById("ed-forget").addEventListener("click", function () {
       if (state.dirty && !confirm("当前修改还没保存，确定退出？")) return;
       localStorage.removeItem(KEY);
