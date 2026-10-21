@@ -63,7 +63,7 @@ TOP_DIRS = ("vault", "assets", ".github")
 # what never does
 SKIP_DIRS = {
     "site", ".cache", ".tmp", "__pycache__", ".git", ".backup", ".sync-state.json",
-    ".obsidian", ".claude", ".trash", "node_modules", "模板", ".github/workflows/__pycache__",
+    ".obsidian", ".claude", ".trash", "node_modules", "模板", "_setup", ".github/workflows/__pycache__",
 }
 SKIP_FILES = {".token", ".DS_Store", "Thumbs.db", ".sync-state.json"}
 

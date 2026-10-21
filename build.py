@@ -57,7 +57,7 @@ CONFIG = {
     "author": "lemishui",
 }
 
-EXCLUDE_DIRS = {".obsidian", ".claude", ".git", ".trash", "模板", "node_modules"}
+EXCLUDE_DIRS = {".obsidian", ".claude", ".git", ".trash", "模板", "node_modules", "_setup"}
 EXCLUDE_FILES = {"claude.md", "agents.md", "readme.md"}
 
 # extension -> how to read it
